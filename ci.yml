@@ -1,0 +1,66 @@
+name: Inventory Planning CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: inventory_db_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: testpassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run schema migrations
+        env:
+          PGPASSWORD: testpassword
+        run: |
+          psql -h localhost -U postgres -d inventory_db_test -f sql/01_schema.sql
+          psql -h localhost -U postgres -d inventory_db_test -f sql/02_views.sql
+          psql -h localhost -U postgres -d inventory_db_test -f sql/03_seed_data.sql
+
+      - name: Run unit tests
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: inventory_db_test
+          DB_USER: postgres
+          DB_PASSWORD: testpassword
+        run: |
+          pytest tests/ -v --cov=etl --cov=models --cov-report=term-missing
+
+      - name: Run pipeline smoke test
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: inventory_db_test
+          DB_USER: postgres
+          DB_PASSWORD: testpassword
+        run: |
+          python -m scheduler.runner --once

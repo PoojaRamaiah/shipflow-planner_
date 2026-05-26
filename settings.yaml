@@ -1,0 +1,69 @@
+# ============================================================
+# config/settings.yaml
+# Central configuration — all environment-specific values here
+# Override with ENV vars for production (see .env.example)
+# ============================================================
+
+database:
+  host: "${DB_HOST:localhost}"
+  port: "${DB_PORT:5432}"
+  name: "${DB_NAME:inventory_db}"
+  user: "${DB_USER:postgres}"
+  password: "${DB_PASSWORD:}"
+  schema: "public"
+  pool_size: 5
+  max_overflow: 10
+  connect_timeout: 30
+
+pipeline:
+  run_rate_window_days: 7          # Rolling window for daily run rate
+  coverage_target_days: 14        # Target inventory coverage in days
+  safety_factor: 1.2              # Reorder point safety multiplier
+  non_buy_alert_threshold: 0.15   # Raise alert if non-buyability > 15%
+
+  # Size thresholds for LARGE classification
+  large_weight_kg: 10.0
+  large_volume_cm3: 30000
+
+  # Batch sizes for ETL
+  inventory_batch_size: 500
+  shipment_batch_size: 1000
+
+scheduling:
+  # Cron expressions (using APScheduler syntax)
+  inventory_snapshot:   "0 6 * * *"    # Daily at 06:00
+  shipment_sync:        "*/30 * * * *"  # Every 30 minutes
+  planning_refresh:     "0 7 * * *"    # Daily at 07:00 (after snapshot)
+  kpi_email_report:     "0 8 * * 1-5"  # Weekdays at 08:00
+
+  # Timezone
+  timezone: "Asia/Kolkata"
+
+  # Retry settings
+  max_retries: 3
+  retry_delay_seconds: 60
+
+logging:
+  level: "INFO"          # DEBUG | INFO | WARNING | ERROR
+  format: "json"         # json | text
+  log_dir: "logs/"
+  rotate_days: 30
+
+alerts:
+  enabled: true
+  # Comma-separated email addresses
+  recipients: "${ALERT_RECIPIENTS:}"
+  smtp_host: "${SMTP_HOST:}"
+  smtp_port: "${SMTP_PORT:587}"
+  smtp_user: "${SMTP_USER:}"
+  smtp_password: "${SMTP_PASSWORD:}"
+  from_address: "inventory-bot@yourcompany.com"
+  subject_prefix: "[Inventory Planning]"
+
+powerbi:
+  # Used by etl/powerbi_refresh.py to trigger dataset refresh via API
+  tenant_id: "${PBI_TENANT_ID:}"
+  client_id: "${PBI_CLIENT_ID:}"
+  client_secret: "${PBI_CLIENT_SECRET:}"
+  workspace_id: "${PBI_WORKSPACE_ID:}"
+  dataset_id: "${PBI_DATASET_ID:}"

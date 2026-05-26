@@ -1,0 +1,156 @@
+# Power BI DAX Measures
+# ============================================================
+# Paste each measure into the Power BI DAX editor.
+# All measures assume the SQL views are imported as tables:
+#   vw_daily_run_rate, vw_non_buyability_large,
+#   vw_inventory_planning, vw_kpi_summary
+# ============================================================
+
+
+# ---------------------------------------------------------------
+# PAGE 1: Daily Run Rate
+# ---------------------------------------------------------------
+
+[Total Units Shipped] =
+SUM(vw_daily_run_rate[units_shipped])
+
+
+[Daily Run Rate (Avg)] =
+AVERAGEX(
+    VALUES(vw_daily_run_rate[report_date]),
+    CALCULATE(SUM(vw_daily_run_rate[units_shipped]))
+)
+
+
+[Rolling 7D Run Rate] =
+VAR MaxDate = MAX(vw_daily_run_rate[report_date])
+VAR MinDate = MaxDate - 6
+RETURN
+CALCULATE(
+    AVERAGE(vw_daily_run_rate[units_shipped]),
+    vw_daily_run_rate[report_date] >= MinDate &&
+    vw_daily_run_rate[report_date] <= MaxDate
+)
+
+
+[DoD Change %] =
+VAR Today   = MAX(vw_daily_run_rate[report_date])
+VAR Yest    = Today - 1
+VAR TodayV  = CALCULATE(SUM(vw_daily_run_rate[units_shipped]),
+                vw_daily_run_rate[report_date] = Today)
+VAR YestV   = CALCULATE(SUM(vw_daily_run_rate[units_shipped]),
+                vw_daily_run_rate[report_date] = Yest)
+RETURN
+IF(
+    ISBLANK(YestV) || YestV = 0,
+    BLANK(),
+    DIVIDE(TodayV - YestV, YestV)
+)
+
+
+[Large vs Standard Split %] =
+VAR LargeUnits    = CALCULATE(SUM(vw_daily_run_rate[units_shipped]),
+                     vw_daily_run_rate[size_class] = "LARGE")
+VAR TotalUnits    = SUM(vw_daily_run_rate[units_shipped])
+RETURN DIVIDE(LargeUnits, TotalUnits)
+
+
+# ---------------------------------------------------------------
+# PAGE 2: Non-Buyability (LARGE Items)
+# ---------------------------------------------------------------
+
+[Total LARGE SKUs] =
+SUM(vw_non_buyability_large[total_large_skus])
+
+
+[Non-Buyable LARGE SKUs] =
+SUM(vw_non_buyability_large[non_buyable_skus])
+
+
+[Non-Buyability %] =
+DIVIDE(
+    SUM(vw_non_buyability_large[non_buyable_skus]),
+    SUM(vw_non_buyability_large[total_large_skus])
+)
+
+
+[Categories in Alert] =
+COUNTROWS(
+    FILTER(vw_non_buyability_large, vw_non_buyability_large[is_alert] = TRUE)
+)
+
+
+[Non-Buyability KPI Color] =
+-- Use in conditional formatting: Red > 15%, Amber 10-15%, Green < 10%
+VAR Pct = [Non-Buyability %]
+RETURN
+SWITCH(
+    TRUE(),
+    Pct >= 0.15, "Red",
+    Pct >= 0.10, "Amber",
+    "Green"
+)
+
+
+# ---------------------------------------------------------------
+# PAGE 3: Inventory Planning
+# ---------------------------------------------------------------
+
+[CRITICAL SKUs] =
+COUNTROWS(
+    FILTER(vw_inventory_planning,
+           vw_inventory_planning[planning_status] = "CRITICAL")
+)
+
+
+[Reorder Now SKUs] =
+COUNTROWS(
+    FILTER(vw_inventory_planning,
+           vw_inventory_planning[planning_status] = "REORDER_NOW")
+)
+
+
+[Total Suggested Order Qty] =
+SUM(vw_inventory_planning[suggested_order_qty])
+
+
+[Avg Coverage Days] =
+AVERAGEX(
+    FILTER(vw_inventory_planning,
+           NOT ISBLANK(vw_inventory_planning[coverage_days])),
+    vw_inventory_planning[coverage_days]
+)
+
+
+[SKUs Below Target Coverage] =
+VAR Target = 14   -- match planning_config.coverage_target_days
+RETURN
+COUNTROWS(
+    FILTER(vw_inventory_planning,
+           vw_inventory_planning[coverage_days] < Target
+           && NOT ISBLANK(vw_inventory_planning[coverage_days]))
+)
+
+
+[Planning Status Label] =
+SWITCH(
+    MAX(vw_inventory_planning[planning_status]),
+    "CRITICAL",    "🔴 Critical",
+    "REORDER_NOW", "🟠 Reorder Now",
+    "PLAN_REORDER","🔵 Plan Reorder",
+    "HEALTHY",     "🟢 Healthy",
+    "NO_DEMAND",   "⚪ No Demand",
+    MAX(vw_inventory_planning[planning_status])
+)
+
+
+[Coverage Days Color] =
+VAR Days = MAX(vw_inventory_planning[coverage_days])
+RETURN
+SWITCH(
+    TRUE(),
+    ISBLANK(Days),      "Gray",
+    Days < 7,           "Red",
+    Days < 14,          "Amber",
+    "Green"
+)
